@@ -377,7 +377,7 @@ def plot_size_vs_confidence_per_class(jsons_detections_manager, save_fig=False):
     del fig
 
 
-def plot_confidence_histograms_multiple_iou( match_func: Callable, save_fig=False):
+def plot_confidence_histograms_multiple_iou(match_func: Callable, save_fig=False):
     """
     Plot histograms of confidence scores for different IoU thresholds in separate subplots.
     """
