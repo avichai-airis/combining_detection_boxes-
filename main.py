@@ -98,37 +98,54 @@ class FrameDetections:
 
 
 class DetectionsManager:
-    def __init__(self, data):
-        if isinstance(data, str) and data.endswith(".json"):
-            with open(data, "r") as f:
-                json_data = json.load(f)
-            self.frames = {
-                fn: FrameDetections.from_dict(data) for fn, data in json_data.get("obj_detection", {}).items()
-            }
-        elif isinstance(data, dict):
-            self.frames = {fn: FrameDetections.from_dict(data) for fn, data in data.items()}
-        else:
-            raise ValueError("Invalid input format. Must be either JSON path or preprocessed data dictionary")
+    def __init__(self, npz_path: str):
+        # Now accept only npz
+        if not npz_path.endswith(".npz"):
+            raise ValueError("DetectionsManager only supports .npz files.")
+        self.frames = DetectionsManager.from_npz(npz_path).frames
 
     @classmethod
     def from_npz(cls, npz_path: str):
-        """Create DetectionsManager instance from NPZ file"""
-        npz_data = np.load(npz_path)
-        boxes = npz_data["boxes"]
-        embeddings = npz_data["embeddings"]
-        frame_names = npz_data["frame_names"]
-        frames_set = set(frame_names)
-        frames = defaultdict(list)
-        for frame_name in frames_set:
-            frame_idx = np.where(frame_names == frame_name)[0]
-            frames[frame_name] = (boxes[frame_idx], embeddings[frame_idx])
-
-        # Create instance with empty dictionary
+        npz_data = np.load(npz_path, allow_pickle=True)
         instance = cls.__new__(cls)
-        instance.frames = {
-            frame_name: FrameDetections.from_boxes_and_embeddings(frame_boxes, frame_embeddings)
-            for frame_name, (frame_boxes, frame_embeddings) in frames.items()
-        }
+        frames_dict = defaultdict(list)
+
+        # Distinguish between open (boxes, embeddings) and closed (bounding_boxes, confidences)
+        if "embeddings" in npz_data:
+            # "open" format
+            frame_names = npz_data["frame_names"]
+            boxes = npz_data["boxes"]
+            embeddings = npz_data["embeddings"]
+            for i, fn in enumerate(frame_names):
+                frames_dict[fn].append((boxes[i], embeddings[i]))
+            instance.frames = {}
+            for fn, data_list in frames_dict.items():
+                box_array = []
+                emb_array = []
+                for b, e in data_list:
+                    box_array.append(b)
+                    emb_array.append(e)
+                instance.frames[fn] = FrameDetections.from_boxes_and_embeddings(
+                    np.array(box_array), np.array(emb_array)
+                )
+        else:
+            # "closed" format
+            frame_names = npz_data["frame_names"]
+            bounding_boxes = npz_data["boxes"]
+            confidences = npz_data["confidences"]
+            class_names = npz_data["class_name"]
+            for i, fn in enumerate(frame_names):
+                frames_dict[fn].append((bounding_boxes[i], confidences[i], class_names[i]))
+            instance.frames = {}
+            for fn, data_list in frames_dict.items():
+                frame_detections = FrameDetections()
+                for box_vals, conf, cls_name in data_list:
+                    xtl, ytl, xbr, ybr = box_vals
+                    frame_detections.detections.append(
+                        BoundingBox(xtl, ytl, xbr, ybr, class_name=cls_name, confidence=conf)
+                    )
+                instance.frames[fn] = frame_detections
+
         return instance
 
     def get_frame_detections(self, frame_name: str) -> FrameDetections or None:
@@ -235,7 +252,7 @@ def print_missing_videos(closed_videos: list, open_videos: list, common_videos: 
 
 def get_detection_paths(video_name: str, closed_path: str, open_path: str) -> tuple:
     """Generate paths for detection files."""
-    detection_path = os.path.join(closed_path, video_name, "object_detection.json")
+    detection_path = os.path.join(closed_path, video_name, "object_detection.npz")
     npz_path = os.path.join(open_path, f"{video_name}.npz")
     return detection_path, npz_path
 
@@ -277,10 +294,10 @@ def match_multi_source_detections(iou_threshold=0.6):
     npz_detections_manager = {}
 
     for video_name in tqdm(videos_name, desc="videos"):
-        detection_path, npz_path = get_detection_paths(video_name, closed_path, open_path)
-
-        json_detections = DetectionsManager(detection_path)
-        npz_detections = DetectionsManager.from_npz(npz_path)
+        closed_npz_path, open_npz_path = get_detection_paths(video_name, closed_path, open_path)
+        # Now both read from NPZ
+        json_detections = DetectionsManager.from_npz(closed_npz_path)
+        npz_detections = DetectionsManager.from_npz(open_npz_path)
 
         # Get all unique frame names from both sources
         frame_names = set(list(json_detections.get_all_frame_names()) + list(npz_detections.get_all_frame_names()))
@@ -300,7 +317,8 @@ def visualize_detections_for_video(video_name):
     bbox_matcher = BBoxMatcher(0.6)
 
     detection_path, npz_path = get_detection_paths(video_name, closed_path, open_path)
-    json_detections = DetectionsManager(detection_path)
+    # Now both are NPZ
+    json_detections = DetectionsManager.from_npz(detection_path)
     npz_detections = DetectionsManager.from_npz(npz_path)
     # Get all unique frame names from both sources
     frame_names = set(list(json_detections.get_all_frame_names()) + list(npz_detections.get_all_frame_names()))
@@ -324,8 +342,46 @@ def count_total_boxes(detections_manager):
     return total_boxes
 
 
+def convert_json_to_npz(json_path):
+    """Convert the json file to npz."""
+    with open(json_path, "r") as f:
+        json_data = json.load(f)
+    frame_names = []
+    class_name = []
+    bounding_boxes = []
+    confidences = []
+    image_size = []
+    for fn, data in json_data.get("obj_detection", {}).items():
+        for detection in data["objects"]:
+            frame_names.append(fn)
+            class_name.append(detection["class"])
+            bounding_boxes.append(detection["box"])
+            confidences.append(detection["confidence"])
+            image_size.append(data.get("imagesize", []))
+
+    np.savez(
+        json_path.replace(".json", ".npz"),
+        frame_names=frame_names,
+        class_name=class_name,
+        boxes=bounding_boxes,
+        confidences=confidences,
+        image_size=image_size,
+    )
+
+
+def convert_all_json_to_npz(closed_folder):
+    """Convert all JSON files in the closed folder to NPZ."""
+    for root, _, files in os.walk(closed_folder):
+        for file in tqdm(files, desc="Converting JSON to NPZ"):
+            if file.endswith("object_detection.json"):
+                json_path = os.path.join(root, file)
+                convert_json_to_npz(json_path)
+                print(f"Converted {json_path} to NPZ")
+
+
 if __name__ == "__main__":
-    # visualize_detections_for_video("object_video_32.mp4")
+    visualize_detections_for_video("object_video_32.mp4")
+    exit()
     save_fig = False
     plot_confidence_histograms_multiple_iou(match_multi_source_detections, save_fig=False)
     jsons_detections_manager, npz_detections_manager = match_multi_source_detections()
