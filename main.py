@@ -157,8 +157,6 @@ class DetectionsManager:
             print(f"No detections found for frame: {frame_name}")
 
 
-
-
 class BBoxMatcher:
     def __init__(self, iou_threshold=0.3):
         self.iou_threshold = iou_threshold
@@ -317,11 +315,27 @@ def visualize_detections_for_video(video_name):
     visualizer.run()
 
 
+def count_total_boxes(detections_manager):
+    """Count the total number of bounding boxes in the detections manager."""
+    total_boxes = 0
+    for video_name in detections_manager.keys():
+        for _, detection in detections_manager[video_name].all_detections():
+            total_boxes += len(detection)
+    return total_boxes
+
+
 if __name__ == "__main__":
-    visualize_detections_for_video("object_video_32.mp4")
+    # visualize_detections_for_video("object_video_32.mp4")
     save_fig = False
-    # plot_confidence_histograms_multiple_iou(match_multi_source_detections, save_fig=False)
+    plot_confidence_histograms_multiple_iou(match_multi_source_detections, save_fig=False)
     jsons_detections_manager, npz_detections_manager = match_multi_source_detections()
+
+    # count total boxes
+    total_boxes_json = count_total_boxes(jsons_detections_manager)
+    total_boxes_npz = count_total_boxes(npz_detections_manager)
+
+    print(f"total boxes in json: {total_boxes_json}")
+    print(f"total boxes in npz: {total_boxes_npz}")
     plot_size_vs_confidence_per_class(jsons_detections_manager, save_fig)
     plot_matches_per_class(jsons_detections_manager, npz_detections_manager, save_fig)
     plot_confidence_histogram(jsons_detections_manager, save_fig)
