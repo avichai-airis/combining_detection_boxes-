@@ -134,16 +134,18 @@ class DetectionsManager:
             bounding_boxes = npz_data["boxes"]
             confidences = npz_data["confidences"]
             class_names = npz_data["class_name"]
+            image_sizes = npz_data["image_size"]
             for i, fn in enumerate(frame_names):
-                frames_dict[fn].append((bounding_boxes[i], confidences[i], class_names[i]))
+                frames_dict[fn].append((bounding_boxes[i], confidences[i], class_names[i], image_sizes[i]))
             instance.frames = {}
             for fn, data_list in frames_dict.items():
                 frame_detections = FrameDetections()
-                for box_vals, conf, cls_name in data_list:
+                for box_vals, conf, cls_name, image_size in data_list:
                     xtl, ytl, xbr, ybr = box_vals
                     frame_detections.detections.append(
                         BoundingBox(xtl, ytl, xbr, ybr, class_name=cls_name, confidence=conf)
                     )
+                frame_detections.image_size = image_size
                 instance.frames[fn] = frame_detections
 
         return instance
@@ -380,20 +382,20 @@ def convert_all_json_to_npz(closed_folder):
 
 
 if __name__ == "__main__":
-    visualize_detections_for_video("object_video_32.mp4")
-    exit()
+    # visualize_detections_for_video("object_video_32.mp4")
+
     save_fig = False
     plot_confidence_histograms_multiple_iou(match_multi_source_detections, save_fig=False)
-    jsons_detections_manager, npz_detections_manager = match_multi_source_detections()
+    closed_detections_manager, open_detections_manager = match_multi_source_detections()
 
     # count total boxes
-    total_boxes_json = count_total_boxes(jsons_detections_manager)
-    total_boxes_npz = count_total_boxes(npz_detections_manager)
+    total_boxes_json = count_total_boxes(closed_detections_manager)
+    total_boxes_npz = count_total_boxes(open_detections_manager)
 
     print(f"total boxes in json: {total_boxes_json}")
     print(f"total boxes in npz: {total_boxes_npz}")
-    plot_size_vs_confidence_per_class(jsons_detections_manager, save_fig)
-    plot_matches_per_class(jsons_detections_manager, npz_detections_manager, save_fig)
-    plot_confidence_histogram(jsons_detections_manager, save_fig)
-    plot_confidence_histogram_per_class(jsons_detections_manager, save_fig)
-    plot_box_size_histogram_per_class(jsons_detections_manager, save_fig)
+    plot_size_vs_confidence_per_class(closed_detections_manager, save_fig)
+    plot_matches_per_class(closed_detections_manager, open_detections_manager, save_fig)
+    plot_confidence_histogram(closed_detections_manager, save_fig)
+    plot_confidence_histogram_per_class(closed_detections_manager, save_fig)
+    plot_box_size_histogram_per_class(closed_detections_manager, save_fig)

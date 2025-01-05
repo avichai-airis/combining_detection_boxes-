@@ -10,16 +10,16 @@ def abbreviate_val(val):
     return f"{val // 1000}k" if val >= 1000 else str(val)
 
 
-def plot_matches_per_class(jsons_detections_manager, npz_detections_manager, save_fig=False):
+def plot_matches_per_class(closed_detections_manager, npz_detections_manager, save_fig=False):
 
     matched_counts = defaultdict(int)
     unmatched_counts = defaultdict(int)
 
-    for video_name, json_mgr in tqdm(jsons_detections_manager.items(), desc="Processing videos"):
-        npz_mgr = npz_detections_manager[video_name]
-        for frame_name in json_mgr.get_all_frame_names():
-            boxes_json = json_mgr.get_frame_detections(frame_name)
-            for box in boxes_json.detections:
+    for video_name, closed_mgr in tqdm(closed_detections_manager.items(), desc="Processing videos"):
+        open_mgr = npz_detections_manager[video_name]
+        for frame_name in closed_mgr.get_all_frame_names():
+            boxes_frame = closed_mgr.get_frame_detections(frame_name)
+            for box in boxes_frame.detections:
                 if box.is_matched:
                     matched_counts[box.class_name] += 1
                 else:
@@ -57,15 +57,15 @@ def plot_matches_per_class(jsons_detections_manager, npz_detections_manager, sav
     del fig
 
 
-def collect_confidence_scores(jsons_detections_manager):
+def collect_confidence_scores(detections_manager_dict):
     matched_scores = []
     unmatched_scores = []
 
     # Collect confidence scores
-    for json_mgr in tqdm(jsons_detections_manager.values(), desc="Processing videos"):
-        for frame_name in json_mgr.get_all_frame_names():
-            boxes_json = json_mgr.get_frame_detections(frame_name)
-            for box in boxes_json.detections:
+    for manager in tqdm(detections_manager_dict.values(), desc="Processing videos"):
+        for frame_name in manager.get_all_frame_names():
+            boxes_frame = manager.get_frame_detections(frame_name)
+            for box in boxes_frame.detections:
                 if box.is_matched:
                     matched_scores.append(box.confidence)
                 else:
@@ -73,8 +73,8 @@ def collect_confidence_scores(jsons_detections_manager):
     return matched_scores, unmatched_scores
 
 
-def plot_confidence_histogram(jsons_detections_manager, save_fig=False):
-    matched_scores, unmatched_scores = collect_confidence_scores(jsons_detections_manager)
+def plot_confidence_histogram(detections_manager_dict, save_fig=False):
+    matched_scores, unmatched_scores = collect_confidence_scores(detections_manager_dict)
 
     # Create histogram
     fig = go.Figure()
@@ -103,17 +103,17 @@ def plot_confidence_histogram(jsons_detections_manager, save_fig=False):
     del fig
 
 
-def plot_confidence_histogram_per_class(jsons_detections_manager, save_fig=False):
+def plot_confidence_histogram_per_class(detections_manager_dict, save_fig=False):
 
     # Dictionary to store scores per class
     matched_scores_per_class = defaultdict(list)
     unmatched_scores_per_class = defaultdict(list)
 
     # Collect confidence scores per class
-    for json_mgr in tqdm(jsons_detections_manager.values(), desc="Processing videos"):
-        for frame_name in json_mgr.get_all_frame_names():
-            boxes_json = json_mgr.get_frame_detections(frame_name)
-            for box in boxes_json.detections:
+    for manager in tqdm(detections_manager_dict.values(), desc="Processing videos"):
+        for frame_name in manager.get_all_frame_names():
+            boxes_frame = manager.get_frame_detections(frame_name)
+            for box in boxes_frame.detections:
                 if box.is_matched:
                     matched_scores_per_class[box.class_name].append(box.confidence)
                 else:
@@ -191,19 +191,19 @@ def plot_confidence_histogram_per_class(jsons_detections_manager, save_fig=False
     del fig
 
 
-def plot_box_size_histogram_per_class(jsons_detections_manager, save_fig=False):
+def plot_box_size_histogram_per_class(detections_manager_dict, save_fig=False):
 
     # Dictionary to store normalized box sizes per class
     matched_sizes_per_class = defaultdict(list)
     unmatched_sizes_per_class = defaultdict(list)
 
     # Collect normalized box sizes per class
-    for json_mgr in tqdm(jsons_detections_manager.values(), desc="Processing videos"):
-        for frame_name in json_mgr.get_all_frame_names():
-            boxes_json = json_mgr.get_frame_detections(frame_name)
-            image_area = boxes_json.image_size[0] * boxes_json.image_size[1]
+    for manager in tqdm(detections_manager_dict.values(), desc="Processing videos"):
+        for frame_name in manager.get_all_frame_names():
+            boxes_frame = manager.get_frame_detections(frame_name)
+            image_area = boxes_frame.image_size[0] * boxes_frame.image_size[1] if len(boxes_frame.image_size)> 1 else 1
 
-            for box in boxes_json.detections:
+            for box in boxes_frame.detections:
                 # Calculate box width and height
                 width = box.xbr - box.xtl
                 height = box.ybr - box.ytl
@@ -285,7 +285,7 @@ def plot_box_size_histogram_per_class(jsons_detections_manager, save_fig=False):
     del fig
 
 
-def plot_size_vs_confidence_per_class(jsons_detections_manager, save_fig=False):
+def plot_size_vs_confidence_per_class(detections_manager_dict, save_fig=False):
     # Collect data per class
     matched_sizes_per_class = defaultdict(list)
     matched_conf_per_class = defaultdict(list)
@@ -293,12 +293,12 @@ def plot_size_vs_confidence_per_class(jsons_detections_manager, save_fig=False):
     unmatched_conf_per_class = defaultdict(list)
 
     # Iterate through all json managers and frames
-    for json_mgr in tqdm(jsons_detections_manager.values(), desc="Processing videos"):
-        for frame_name in json_mgr.get_all_frame_names():
-            boxes_json = json_mgr.get_frame_detections(frame_name)
-            image_area = boxes_json.image_size[0] * boxes_json.image_size[1]
+    for manager in tqdm(detections_manager_dict.values(), desc="Processing videos"):
+        for frame_name in manager.get_all_frame_names():
+            boxes_frame = manager.get_frame_detections(frame_name)
+            image_area = boxes_frame.image_size[0] * boxes_frame.image_size[1] if len(boxes_frame.image_size) > 1 else 1
 
-            for box in boxes_json.detections:
+            for box in boxes_frame.detections:
                 # Calculate normalized box size
                 width = box.xbr - box.xtl
                 height = box.ybr - box.ytl
@@ -377,7 +377,7 @@ def plot_size_vs_confidence_per_class(jsons_detections_manager, save_fig=False):
     del fig
 
 
-def plot_confidence_histograms_multiple_iou(match_func: Callable, save_fig=False):
+def plot_confidence_histograms_multiple_iou(match_func, save_fig=False):
     """
     Plot histograms of confidence scores for different IoU thresholds in separate subplots.
     """
@@ -387,8 +387,8 @@ def plot_confidence_histograms_multiple_iou(match_func: Callable, save_fig=False
 
     # Collect scores for each IoU threshold
     for iou_threshold in tqdm(iou_thresholds, desc="Processing IoU thresholds"):
-        jsons_detections_manager, _ = match_func(iou_threshold)
-        matched, unmatched = collect_confidence_scores(jsons_detections_manager)
+        closed_detections_manager, _ = match_func(iou_threshold)
+        matched, unmatched = collect_confidence_scores(closed_detections_manager)
         matched_scores_dict[iou_threshold] = matched
         unmatched_scores_dict[iou_threshold] = unmatched
 
